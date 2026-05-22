@@ -5,6 +5,7 @@ import Courses from "./pages/Courses";
 import CourseDetails from "./pages/CourseDetails";
 import About from "./pages/About";
 import NotFound from "./pages/NotFound";
+import Qc2 from "./components/Qc2";
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
         <Link to="/courses">Courses</Link>
 
         <Link to="/about">About</Link>
+        <Link to="/qc">Qc</Link>
       </nav>
 
       <Routes>
@@ -31,7 +33,7 @@ export default function App() {
         <Route path="/courses/:courseId" element={<CourseDetails />} />
 
         <Route path="/about" element={<About />} />
-
+        <Route path="/qc" element={<Qc2 />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </div>
