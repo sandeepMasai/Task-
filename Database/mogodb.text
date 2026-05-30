@@ -1,0 +1,499 @@
+Problem 1 — Total Orders & Revenue by Status
+db.orders.aggregate([
+  {
+    $group: {
+      _id: "$status",
+      totalOrders: { $sum: 1 },
+      totalRevenue: { $sum: "$amount" }
+    }
+  },
+  {
+    $project: {
+      _id: 0,
+      status: "$_id",
+      totalOrders: 1,
+      totalRevenue: 1
+    }
+  },
+  {
+    $sort: { totalRevenue: -1 }
+  }
+])
+Problem 2 — Top 3 Customers by Spend (Delivered Orders)
+db.orders.aggregate([
+  {
+    $match: { status: "delivered" }
+  },
+  {
+    $group: {
+      _id: "$customerId",
+      totalSpent: { $sum: "$amount" }
+    }
+  },
+  {
+    $sort: { totalSpent: -1 }
+  },
+  {
+    $limit: 3
+  },
+  {
+    $project: {
+      _id: 0,
+      customerId: "$_id",
+      totalSpent: 1
+    }
+  }
+])
+Problem 3 — Total Quantity Sold Per Product
+db.orders.aggregate([
+  {
+    $group: {
+      _id: "$productId",
+      totalQtySold: { $sum: "$qty" }
+    }
+  },
+  {
+    $project: {
+      _id: 0,
+      productId: "$_id",
+      totalQtySold: 1
+    }
+  }
+])
+Problem 4 — Page 2, 3 Customers Per Page
+db.orders.aggregate([
+  {
+    $group: {
+      _id: "$customerId",
+      orderCount: { $sum: 1 }
+    }
+  },
+  {
+    $sort: { orderCount: -1 }
+  },
+  {
+    $skip: 3
+  },
+  {
+    $limit: 3
+  },
+  {
+    $project: {
+      _id: 0,
+      customerId: "$_id",
+      orderCount: 1
+    }
+  }
+])
+Problem 5 — Tag Frequency
+db.reviews.aggregate([
+  {
+    $unwind: "$tags"
+  },
+  {
+    $group: {
+      _id: "$tags",
+      count: { $sum: 1 }
+    }
+  },
+  {
+    $sort: { count: -1 }
+  },
+  {
+    $project: {
+      _id: 0,
+      tag: "$_id",
+      count: 1
+    }
+  }
+])
+Problem 6 — Tags in Reviews Rating >= 4
+db.reviews.aggregate([
+  {
+    $match: {
+      rating: { $gte: 4 }
+    }
+  },
+  {
+    $unwind: "$tags"
+  },
+  {
+    $group: {
+      _id: "$tags",
+      count: { $sum: 1 }
+    }
+  },
+  {
+    $project: {
+      _id: 0,
+      tag: "$_id",
+      count: 1
+    }
+  }
+])
+Problem 7 — Orders with Customer Details
+db.orders.aggregate([
+  {
+    $lookup: {
+      from: "customers",
+      localField: "customerId",
+      foreignField: "_id",
+      as: "customer"
+    }
+  },
+  {
+    $unwind: "$customer"
+  },
+  {
+    $project: {
+      _id: 0,
+      orderId: "$_id",
+      amount: 1,
+      status: 1,
+      customerName: "$customer.name",
+      city: "$customer.city"
+    }
+  }
+])
+Problem 8 — Orders by Gold Customers
+db.orders.aggregate([
+  {
+    $lookup: {
+      from: "customers",
+      localField: "customerId",
+      foreignField: "_id",
+      as: "customer"
+    }
+  },
+  {
+    $unwind: "$customer"
+  },
+  {
+    $match: {
+      "customer.tier": "gold"
+    }
+  },
+  {
+    $project: {
+      _id: 0,
+      orderId: "$_id",
+      amount: 1,
+      name: "$customer.name",
+      tier: "$customer.tier"
+    }
+  }
+])
+Problem 9 — Customers with Their Orders
+db.customers.aggregate([
+  {
+    $lookup: {
+      from: "orders",
+      localField: "_id",
+      foreignField: "customerId",
+      as: "orders"
+    }
+  },
+  {
+    $project: {
+      _id: 0,
+      name: 1,
+      city: 1,
+      orderAmounts: "$orders.amount"
+    }
+  }
+])
+Problem 10 — Customer Order Count & Spend
+db.customers.aggregate([
+  {
+    $lookup: {
+      from: "orders",
+      localField: "_id",
+      foreignField: "customerId",
+      as: "orders"
+    }
+  },
+  {
+    $unwind: "$orders"
+  },
+  {
+    $group: {
+      _id: "$name",
+      totalOrders: { $sum: 1 },
+      totalSpend: { $sum: "$orders.amount" }
+    }
+  },
+  {
+    $sort: { totalSpend: -1 }
+  }
+])
+Problem 11 — Add Discount & High Value Flag
+db.orders.aggregate([
+  {
+    $addFields: {
+      discountedAmount: {
+        $multiply: ["$amount", 0.9]
+      },
+      isHighValue: {
+        $gt: ["$amount", 20000]
+      }
+    }
+  }
+])
+Problem 12 — Total Value = Qty × Product Price
+db.orders.aggregate([
+  {
+    $lookup: {
+      from: "products",
+      localField: "productId",
+      foreignField: "_id",
+      as: "product"
+    }
+  },
+  {
+    $unwind: "$product"
+  },
+  {
+    $addFields: {
+      totalValue: {
+        $multiply: ["$qty", "$product.price"]
+      }
+    }
+  },
+  {
+    $project: {
+      _id: 0,
+      orderId: "$_id",
+      productName: "$product.name",
+      qty: 1,
+      totalValue: 1
+    }
+  }
+])
+Problem 13 — Count High Value Delivered Orders
+db.orders.aggregate([
+  {
+    $match: {
+      amount: { $gt: 15000 },
+      status: "delivered"
+    }
+  },
+  {
+    $count: "highValueDelivered"
+  }
+])
+Problem 14 — Premium Tag Count
+db.reviews.aggregate([
+  {
+    $unwind: "$tags"
+  },
+  {
+    $match: {
+      tags: "premium"
+    }
+  },
+  {
+    $count: "premiumTagCount"
+  }
+])
+Problem 15 — Dashboard Using $facet
+db.orders.aggregate([
+  {
+    $facet: {
+      byStatus: [
+        {
+          $group: {
+            _id: "$status",
+            count: { $sum: 1 }
+          }
+        }
+      ],
+
+      topSpenders: [
+        {
+          $group: {
+            _id: "$customerId",
+            totalSpent: { $sum: "$amount" }
+          }
+        },
+        { $sort: { totalSpent: -1 } },
+        { $limit: 3 }
+      ],
+
+      revenueByMonth: [
+        {
+          $group: {
+            _id: { $month: "$orderDate" },
+            revenue: { $sum: "$amount" }
+          }
+        }
+      ]
+    }
+  }
+])
+Problem 16 — $facet + $lookup
+db.customers.aggregate([
+  {
+    $facet: {
+      byCity: [
+        {
+          $group: {
+            _id: "$city",
+            count: { $sum: 1 }
+          }
+        }
+      ],
+
+      goldCustomersWithOrders: [
+        {
+          $match: {
+            tier: "gold"
+          }
+        },
+        {
+          $lookup: {
+            from: "orders",
+            localField: "_id",
+            foreignField: "customerId",
+            as: "orders"
+          }
+        },
+        {
+          $project: {
+            name: 1,
+            orderCount: {
+              $size: "$orders"
+            }
+          }
+        }
+      ]
+    }
+  }
+])
+Problem 17 — Revenue Summary into New Collection
+db.orders.aggregate([
+  {
+    $group: {
+      _id: "$customerId",
+      totalRevenue: {
+        $sum: "$amount"
+      }
+    }
+  },
+  {
+    $out: "customer_revenue_summary"
+  }
+])
+
+Verify:
+
+db.customer_revenue_summary.find()
+Problem 18 — City Spend Report
+db.orders.aggregate([
+  {
+    $lookup: {
+      from: "customers",
+      localField: "customerId",
+      foreignField: "_id",
+      as: "customer"
+    }
+  },
+  {
+    $unwind: "$customer"
+  },
+  {
+    $group: {
+      _id: {
+        name: "$customer.name",
+        city: "$customer.city"
+      },
+      totalSpend: {
+        $sum: "$amount"
+      }
+    }
+  },
+  {
+    $out: "city_spend_report"
+  }
+])
+Problem 19 — Full Pipeline
+db.orders.aggregate([
+  {
+    $match: {
+      status: "delivered"
+    }
+  },
+  {
+    $lookup: {
+      from: "products",
+      localField: "productId",
+      foreignField: "_id",
+      as: "product"
+    }
+  },
+  {
+    $unwind: "$product"
+  },
+  {
+    $addFields: {
+      revenueContribution: {
+        $divide: ["$amount", 1000]
+      }
+    }
+  },
+  {
+    $group: {
+      _id: "$product.category",
+      totalRevenueContribution: {
+        $sum: "$revenueContribution"
+      },
+      orderCount: {
+        $sum: 1
+      }
+    }
+  },
+  {
+    $sort: {
+      totalRevenueContribution: -1
+    }
+  },
+  {
+    $skip: 1
+  },
+  {
+    $limit: 2
+  }
+])
+Problem 20 — Double Lookup
+db.reviews.aggregate([
+  {
+    $lookup: {
+      from: "customers",
+      localField: "customerId",
+      foreignField: "_id",
+      as: "customer"
+    }
+  },
+  {
+    $lookup: {
+      from: "products",
+      localField: "productId",
+      foreignField: "_id",
+      as: "product"
+    }
+  },
+  {
+    $unwind: "$customer"
+  },
+  {
+    $unwind: "$product"
+  },
+  {
+    $project: {
+      _id: 0,
+      reviewId: "$_id",
+      reviewerName: "$customer.name",
+      productName: "$product.name",
+      rating: 1
+    }
+  }
+])
