@@ -1,0 +1,772 @@
+# Food Delivery Platform System Design
+
+## Design Similar to Swiggy / Zomato
+
+---
+
+# Assumptions
+
+1. Daily Active Users (DAU) = 5 Million
+2. Peak Orders = 5,000 Orders/sec
+3. Average Menu Size = 50 Items per Restaurant
+4. Total Restaurants = 1 Million
+5. Average Order Size = 5 Items
+6. Average Order Record Size = 2 KB
+7. Average Menu Item Size = 1 KB
+8. Availability Target = 99.9%
+9. Read/Write Ratio = 80:20
+10. Real-time updates required within 2 seconds
+
+---
+
+# Part 1 – Capacity Estimation
+
+## 1. Restaurant & Menu Storage
+
+### Restaurant Data
+
+Assume:
+
+* 1 Million Restaurants
+* Restaurant Metadata = 2 KB
+
+Storage:
+
+1,000,000 × 2 KB
+
+= 2 GB
+
+---
+
+### Menu Data
+
+Assume:
+
+* 50 Menu Items per Restaurant
+* 1 KB per Menu Item
+
+Total Menu Items:
+
+1,000,000 × 50
+
+= 50 Million Menu Items
+
+Storage:
+
+50,000,000 × 1 KB
+
+= 50 GB
+
+---
+
+### Total Storage
+
+Restaurants = 2 GB
+
+Menus = 50 GB
+
+Total = 52 GB
+
+Considering Replication (3x):
+
+52 × 3
+
+= 156 GB
+
+---
+
+## 2. Order Service QPS
+
+Peak Orders:
+
+5,000 Orders/sec
+
+Each Order Generates:
+
+1 Create Order Write
+
+1 Payment Update
+
+5 Status Updates
+
+1 Delivery Assignment
+
+Total Writes:
+
+5,000 × 8
+
+= 40,000 Writes/sec
+
+---
+
+Read Traffic
+
+Read/Write Ratio = 80:20
+
+Reads:
+
+40,000 × 4
+
+= 160,000 Reads/sec
+
+---
+
+Final Estimate
+
+Read QPS ≈ 160K/sec
+
+Write QPS ≈ 40K/sec
+
+---
+
+## 3. Bandwidth Requirement
+
+Assume:
+
+Order Payload = 2 KB
+
+Peak Orders = 5,000/sec
+
+Bandwidth:
+
+5,000 × 2 KB
+
+= 10 MB/sec
+
+Status Updates:
+
+25,000 Updates/sec
+
+Payload = 1 KB
+
+25 MB/sec
+
+Total:
+
+≈ 35 MB/sec
+
+≈ 280 Mbps
+
+Provision:
+
+1–2 Gbps Capacity
+
+---
+
+# Part 2 – High-Level Architecture
+
+```
+                +----------------+
+                | Mobile/Web App |
+                +--------+-------+
+                         |
+                         |
+                +--------v--------+
+                | API Gateway     |
+                | Load Balancer   |
+                +--------+--------+
+                         |
+```
+
+---
+
+|          |            |           |         |        |
+|          |            |           |         |        |
+v          v            v           v         v        v
+
+Search   Restaurant   Order   Delivery  Notification Payment
+Service   Service    Service   Service    Service    Service
+
+|           |          |          |
+|           |          |          |
+v           v          v          v
+
+Elastic   MongoDB   PostgreSQL  PostgreSQL
+Search
+
+```
+        |
+        |
+        v
+
+     Redis
+
+        |
+        |
+        v
+
+   Kafka/Event Bus
+
+        |
+        |
+        v
+```
+
+Push Notification
+SMS
+Email
+
+---
+
+## Components
+
+### API Gateway
+
+Responsibilities:
+
+* Authentication
+* Rate Limiting
+* Routing
+* Load Balancing
+
+---
+
+### Search Service
+
+Responsibilities:
+
+* Restaurant Search
+* Cuisine Filters
+* Rating Filters
+* Nearby Restaurant Discovery
+
+Database:
+
+ElasticSearch
+
+---
+
+### Restaurant Service
+
+Responsibilities:
+
+* Restaurant Details
+* Menus
+* Categories
+
+Database:
+
+MongoDB
+
+---
+
+### Order Service
+
+Responsibilities:
+
+* Order Creation
+* Status Tracking
+* Order Lifecycle
+
+Database:
+
+PostgreSQL
+
+---
+
+### Delivery Service
+
+Responsibilities:
+
+* Delivery Partner Assignment
+* Tracking
+* Route Updates
+
+Database:
+
+PostgreSQL
+
+---
+
+### Notification Service
+
+Responsibilities:
+
+* Push Notifications
+* SMS
+* Emails
+
+Uses Kafka Events
+
+---
+
+### Redis Cache
+
+Responsibilities:
+
+* Hot Menus
+* Restaurant Lists
+* Search Results
+
+---
+
+### Kafka
+
+Responsibilities:
+
+* Event Streaming
+* Decoupling Services
+* Reliable Processing
+
+---
+
+# Part 3 – Order Service Deep Dive
+
+## Order State Machine
+
+PLACED
+|
+v
+PAYMENT_CONFIRMED
+|
+v
+RESTAURANT_CONFIRMED
+|
+v
+PREPARING
+|
+v
+READY_FOR_PICKUP
+|
+v
+OUT_FOR_DELIVERY
+|
+v
+DELIVERED
+
+Failure States:
+
+PLACED -> CANCELLED
+
+PAYMENT_FAILED
+
+RESTAURANT_REJECTED
+
+DELIVERY_FAILED
+
+REFUNDED
+
+---
+
+## Orders Table Schema
+
+Orders
+
+order_id (PK)
+
+customer_id
+
+restaurant_id
+
+delivery_partner_id
+
+status
+
+total_amount
+
+payment_status
+
+created_at
+
+updated_at
+
+delivery_address
+
+estimated_delivery_time
+
+---
+
+Indexes
+
+PRIMARY KEY(order_id)
+
+INDEX(customer_id)
+
+INDEX(restaurant_id)
+
+INDEX(status)
+
+INDEX(created_at)
+
+INDEX(delivery_partner_id)
+
+---
+
+## Delivery Partner Assignment
+
+Flow:
+
+1. Order Created
+
+2. Event Published to Kafka
+
+3. Delivery Service Consumes Event
+
+4. Query Nearby Delivery Partners
+
+5. Rank by:
+
+   * Distance
+   * Availability
+   * Current Load
+
+6. Send Assignment Request
+
+7. First Acceptance Wins
+
+8. Update Order
+
+---
+
+## If No Delivery Partner Available
+
+Order enters:
+
+WAITING_FOR_PARTNER
+
+Retry Strategy:
+
+Retry every 30 seconds
+
+Expand Search Radius
+
+Offer Incentives
+
+Escalate to Backup Fleet
+
+Notify Customer
+
+If timeout exceeds threshold:
+
+Order Cancelled + Refund
+
+---
+
+# Part 4 – Scalability & Trade-offs
+
+## Restaurant Search
+
+Traffic:
+
+80% Read Heavy
+
+Solution:
+
+ElasticSearch
+
+Redis Cache
+
+CDN for Static Content
+
+Popular Queries Cached
+
+Examples:
+
+Delhi Pizza
+
+Mumbai Biryani
+
+Bangalore Chinese
+
+---
+
+### Trade-offs
+
+Pros:
+
+* Fast Response
+* Reduced DB Load
+
+Cons:
+
+* Stale Data
+* Cache Invalidation Complexity
+
+---
+
+## Real-Time Order Tracking
+
+### Polling
+
+Client requests every few seconds.
+
+Pros:
+
+Simple
+
+Cons:
+
+High Server Load
+
+Poor Scalability
+
+---
+
+### WebSockets
+
+Persistent Connection
+
+Pros:
+
+Real-Time Updates
+
+Low Latency
+
+Efficient
+
+Cons:
+
+Connection Management Required
+
+---
+
+### SSE
+
+Server Push
+
+Pros:
+
+Lightweight
+
+Cons:
+
+One-Way Communication
+
+---
+
+### Choice
+
+WebSockets
+
+Reason:
+
+* <2 sec latency
+* Bidirectional communication
+* Industry standard
+
+---
+
+## Database Choice
+
+### Menu Browsing
+
+MongoDB
+
+Reason:
+
+Flexible Schema
+
+Nested Documents
+
+Read Optimized
+
+---
+
+### Orders
+
+PostgreSQL
+
+Reason:
+
+ACID Transactions
+
+Consistency
+
+Reliable Updates
+
+---
+
+### Why Not Single Database?
+
+Different Access Patterns
+
+Menu:
+
+Read Heavy
+
+Flexible Structure
+
+Orders:
+
+Write Heavy
+
+Transactional
+
+Polyglot Persistence Preferred
+
+---
+
+## Handling 10× Peak Load
+
+Orders:
+
+5,000/sec
+
+Flash Sale:
+
+50,000/sec
+
+Strategies:
+
+### Kafka Buffering
+
+Absorb Traffic Spikes
+
+---
+
+### Horizontal Scaling
+
+Auto-scale Microservices
+
+Kubernetes HPA
+
+---
+
+### Redis Caching
+
+Reduce Read Pressure
+
+---
+
+### Database Read Replicas
+
+Scale Reads
+
+---
+
+### Rate Limiting
+
+Prevent Abuse
+
+---
+
+### Circuit Breakers
+
+Avoid Cascading Failures
+
+---
+
+### Queue-Based Processing
+
+Non-critical Tasks Async
+
+Notifications
+
+Analytics
+
+Recommendations
+
+---
+
+# Part 5 – Failure Scenarios
+
+## Scenario 1
+
+Delivery Partner App Goes Offline
+
+Detection:
+
+Heartbeat Missing
+
+GPS Updates Stop
+
+Actions:
+
+1. Mark Driver Offline
+2. Notify Customer
+3. Reassign Driver
+4. Escalate to Operations Team
+
+Order Status Maintained
+
+No Data Loss Through Kafka Events
+
+---
+
+## Scenario 2
+
+Payment Service Unavailable
+
+Detection:
+
+Gateway Timeout
+
+Actions:
+
+1. Order Stored as PENDING_PAYMENT
+2. Retry Payment
+3. Queue Retry Event
+4. Notify Customer
+
+If Retry Succeeds:
+
+Continue Workflow
+
+If Retry Fails:
+
+Cancel Order
+
+No Duplicate Orders Through Idempotency Keys
+
+---
+
+# Final Architecture Summary
+
+Frontend:
+
+* Mobile App
+* Web App
+
+Gateway:
+
+* API Gateway
+* Load Balancer
+
+Core Services:
+
+* Search Service
+* Restaurant Service
+* Order Service
+* Delivery Service
+* Notification Service
+
+Infrastructure:
+
+* Redis
+* Kafka
+
+Databases:
+
+* ElasticSearch
+* MongoDB
+* PostgreSQL
+
+Real-Time:
+
+* WebSockets
+
+Scalability:
+
+* Horizontal Scaling
+* Read Replicas
+* Kafka Buffering
+* Redis Cache
+
+Availability:
+
+* Multi-AZ Deployment
+* Replication
+* Health Checks
+* Auto Recovery
+
+Target Achieved:
+
+✔ 5 Million DAU
+
+✔ 5,000 Orders/sec
+
+✔ < 2 sec Status Updates
+
+✔ 99.9% Availability
+
+✔ Scalable Microservice Architecture
